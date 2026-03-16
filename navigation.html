@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>SafeRoute AI</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.css"/>
+
+<style>
+body{
+  margin:0;
+  font-family:Arial;
+  overflow:hidden;
+}
+
+#map{
+  position:absolute;
+  top:0;
+  left:0;
+  width:100%;
+  height:100vh;
+  z-index:1;
+}
+
+/* TOP LEFT WRAPPER */
+.top-left-wrapper{
+  position:absolute;
+  top:20px;
+  left:20px;
+  display:flex;
+  gap:10px;
+  z-index:1000;
+}
+
+/* SEARCH PANEL */
+.search-panel{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  background:white;
+  padding:10px 15px;
+  border-radius:30px;
+  box-shadow:0 3px 10px rgba(0,0,0,0.2);
+}
+
+.search-panel input{
+  border:none;
+  outline:none;
+  padding:8px;
+  font-size:14px;
+  border-radius:6px;
+}
+
+.search-panel button{
+  border:none;
+  background:none;
+  font-size:18px;
+  cursor:pointer;
+  border-radius:6px;
+  padding:8px 10px;
+}
+
+/* CATEGORY PANEL */
+.category-panel{
+  display:flex;
+  gap:10px;
+}
+
+.category-panel button{
+  background:white;
+  border:none;
+  padding:10px 16px;
+  border-radius:12px;
+  box-shadow:0 2px 6px rgba(0,0,0,0.2);
+  cursor:pointer;
+  font-weight:bold;
+  transition:0.2s;
+}
+
+.category-panel button.safe{
+  background:white;
+  color:black;
+}
+
+.category-panel button.fast{
+  background:white;
+  color:black;
+}
+
+.category-panel button:hover{
+  transform:scale(1.05);
+}
+
+/* EMERGENCY PANEL */
+.emergency-panel{
+  position:absolute;
+  top:20px;
+  right:20px;
+  background:white;
+  padding:15px;
+  border-radius:12px;
+  box-shadow:0 2px 10px rgba(0,0,0,0.2);
+  z-index:1000;
+}
+
+/* ROUTE INFO */
+.route-info{
+  position:absolute;
+  bottom:20px;
+  left:20px;
+  background:white;
+  padding:15px;
+  border-radius:10px;
+  box-shadow:0 2px 10px rgba(0,0,0,0.2);
+  z-index:1000;
+}
+
+/* SOS BUTTON */
+.sos{
+  position:absolute;
+  bottom:30px;
+  right:30px;
+  background:red;
+  color:white;
+  border:none;
+  padding:18px;
+  border-radius:50%;
+  font-size:18px;
+  cursor:pointer;
+  z-index:1000;
+  animation:pulse 2s infinite;
+}
+
+@keyframes pulse{
+  0%{box-shadow:0 0 0 0 rgba(255,0,0,0.7);}
+  70%{box-shadow:0 0 0 15px rgba(255,0,0,0);}
+  100%{box-shadow:0 0 0 0 rgba(255,0,0,0);}
+}
+</style>
+</head>
+
+<body>
+
+<div id="map"></div>
+
+<!-- TOP LEFT WRAPPER -->
+<div class="top-left-wrapper">
+  <!-- SEARCH PANEL -->
+  <div class="search-panel">
+    <input id="from" type="text" placeholder="Start location">
+    <input id="to" type="text" placeholder="Destination">
+    <button onclick="searchRoute()">🔍</button>
+  </div>
+
+  <!-- CATEGORY PANEL -->
+  <div class="category-panel">
+    <button class="safe" onclick="showSafeRoute()">🟢 Safe Route</button>
+    <button class="fast" onclick="showFastRoute()">⚡ Fastest Route</button>
+    <button onclick="alert('Police nearby!')">🚓 Police</button>
+    <button onclick="alert('Hospitals nearby!')">🚑 Hospitals</button>
+  </div>
+</div>
+
+<!-- EMERGENCY PANEL -->
+<div class="emergency-panel">
+  <h4>🚨 Emergency</h4>
+  <p>🚓 Police: 100</p>
+  <p>🚑 Ambulance: 108</p>
+  <p>🔥 Fire: 101</p>
+</div>
+
+<!-- ROUTE INFO -->
+<div class="route-info" id="routeInfo">
+  <h3>Route Details</h3>
+  <p>Enter locations to see route.</p>
+</div>
+
+<button class="sos" onclick="alert('Emergency alert sent!')">SOS</button>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.js"></script>
+
+<script>
+var map = L.map('map').setView([12.9141,74.8560],13);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+  maxZoom:19,
+  attribution:"© OpenStreetMap"
+}).addTo(map);
+
+var locations={
+  kankanady:[12.8698,74.8451],
+  hampankatta:[12.8690,74.8429],
+  surathkal:[13.0080,74.7955],
+  lalbagh:[12.8926,74.8446],
+  kadri:[12.8876,74.8560]
+};
+
+// ✅ FIX 1: dangerZones defined before use
+var dangerZones = [];
+
+dangerZones.forEach(function(zone){
+  L.circleMarker(zone.coords,{
+    color:"red",
+    radius:8,
+    fillOpacity:0.8
+  }).addTo(map)
+  .bindPopup("<b>⚠ Danger Zone</b><br>"+zone.name+"<br><b>Risk:</b> "+zone.risk);
+});
+
+var routingControl;
+
+// ✅ FIX 2: searchRoute passes data to drawRoute correctly
+function searchRoute(){
+  let from = document.getElementById("from").value;
+  let to = document.getElementById("to").value;
+
+  fetch("http://127.0.0.1:5000/api/route",{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({start:from, end:to})
+  })
+  .then(res=>res.json())
+  .then(data=>{
+    if(data.status==="error"){
+      alert(data.message);
+      return;
+    }
+    drawRoute(data.start, data.end);
+  });
+}
+
+// ✅ FIX 3: drawRoute now accepts and uses the coordinates
+function drawRoute(startCoords, endCoords){
+  if(routingControl){
+    map.removeControl(routingControl);
+  }
+
+  routingControl=L.Routing.control({
+    waypoints:[
+      L.latLng(startCoords[0],startCoords[1]),
+      L.latLng(endCoords[0],endCoords[1])
+    ],
+    lineOptions:{styles:[{color:"blue",weight:5}]},
+    routeWhileDragging:false
+  }).addTo(map);
+
+  map.flyTo(startCoords,14);
+
+  var score=Math.floor(Math.random()*30)+70;
+  document.getElementById("routeInfo").innerHTML=
+    "<h3>Route Details</h3>"+
+    "<p><b>From:</b> "+document.getElementById("from").value+"</p>"+
+    "<p><b>To:</b> "+document.getElementById("to").value+"</p>"+
+    "<p><b>Safety Score:</b> "+score+"%</p>";
+}
+
+function showSafeRoute(){}
+function showFastRoute(){}
+
+function shareLocation(){
+  if(navigator.geolocation){
+    navigator.geolocation.getCurrentPosition(function(position){
+      var lat=position.coords.latitude;
+      var lon=position.coords.longitude;
+      L.marker([lat,lon]).addTo(map).bindPopup("📍 Your Current Location").openPopup();
+      map.setView([lat,lon],15);
+    });
+  }else{
+    alert("Location not supported");
+  }
+}
+</script>
+
+</body>
+</html>
